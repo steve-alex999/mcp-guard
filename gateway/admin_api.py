@@ -23,12 +23,20 @@ from pydantic import BaseModel, Field
 from gateway.approvals import Approval, ApprovalClosed, ApprovalQueue, UnknownApproval
 from gateway.audit import AuditLog, CallRecord, Decision, db_path
 from gateway.config import PolicyConfig, PolicyFile, policy_path
+from gateway.tools import TOOLS
 
 DASHBOARD_ORIGINS = os.environ.get("MCP_GUARD_DASHBOARD_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 
 
 class CallDetail(CallRecord):
     approval: Approval | None = None
+
+
+class ToolInfo(BaseModel):
+    name: str
+    title: str
+    risk: Literal["low", "medium", "high"]
+    writes: bool
 
 
 class Resolution(BaseModel):
@@ -77,6 +85,10 @@ def create_app(db: Path, policy: Path) -> FastAPI:
     @app.post("/pending/{approval_id}/deny")
     def deny(approval_id: str, resolution: Resolution | None = None) -> Approval:
         return resolve(approval_id, "denied", resolution)
+
+    @app.get("/tools")
+    def list_tools() -> list[ToolInfo]:
+        return [ToolInfo(name=t.name, title=t.title, risk=t.risk, writes=t.writes) for t in TOOLS.values()]
 
     @app.get("/policy")
     def get_policy() -> PolicyConfig:

@@ -7,11 +7,11 @@ append-only audit log. The lookup tools and the synthetic data come from
 [alert-triage-agent](https://github.com/steve-alex999/alert-triage-agent), imported, not
 copied. See [SPEC.md](SPEC.md) for the full design.
 
-**Status: milestone 2 of 4.** The MCP server, the gateway, the simulated write tools, the
-approval queue, the audit log and the admin API work. The policy checks themselves
-(`gateway/policy.py`) are a TODO: until `check()` is written, the gateway fails closed and
-blocks every call with `BLOCK_ERROR`. The dashboard, the injection scanner and the eval come
-in milestones 3 and 4.
+**Status: milestone 3 of 4.** The MCP server, the gateway, the simulated write tools, the
+approval queue, the audit log, the admin API and the dashboard work. The policy checks
+themselves (`gateway/policy.py`) are a TODO: until `check()` is written, the gateway fails
+closed and blocks every call with `BLOCK_ERROR`. The injection scanner and the eval come in
+milestone 4.
 
 ## Setup
 
@@ -32,6 +32,7 @@ written. To run everything else: `pytest --ignore=tests/test_policy.py`.
 python -m gateway.server --transport stdio --client-id claude-desktop    # what an MCP client launches
 python -m gateway.server --transport http --port 8765 --admin-port 8766  # MCP at http://127.0.0.1:8765/mcp, admin API on 8766
 python -m gateway.admin_api --port 8766                                   # the admin API on its own
+cd dashboard && npm install && npm run dev                                # the dashboard, at http://localhost:3000
 ```
 
 Gateway processes and the admin API share state through `data/guard.db` (SQLite) and
@@ -71,10 +72,9 @@ The command is the venv's Python by absolute path, because Claude Desktop does n
 servers from your shell, so a bare `python` would not find the installed packages. Nothing
 depends on the working directory.
 
-To approve or deny high-risk calls, run `python -m gateway.admin_api` in a terminal and use
-`GET /pending` and `POST /pending/{id}/approve` (the dashboard comes in milestone 3). A
-held call waits up to `approval_timeout_s` (120 s); the gateway sends MCP progress
-notifications while it waits, for clients that ask for them.
+To approve or deny high-risk calls, run `python -m gateway.admin_api` and the dashboard, and
+use its Pending page. A held call waits up to `approval_timeout_s` (120 s); the gateway sends
+MCP progress notifications while it waits, for clients that ask for them.
 
 Claude Desktop writes the server's stderr to `~/Library/Logs/Claude/mcp-server-mcp-guard.log`,
 with one line per tool call.
@@ -138,6 +138,23 @@ The output scan of step 7 in SPEC.md comes in milestone 4.
 
 Gateways re-read the file when it changes. `PUT /policy` rewrites it, dropping comments.
 
+## Dashboard
+
+A Next.js app (App Router, TypeScript, Tailwind) in [dashboard/](dashboard). It needs Node
+20.9+ and reads everything from the admin API at `http://127.0.0.1:8766`;
+`NEXT_PUBLIC_ADMIN_API` points it elsewhere.
+
+| Page | Shows |
+| --- | --- |
+| `/` | The call feed: time, client, tool, decision and latency, filterable by decision and client |
+| `/calls/[id]` | One call: arguments, output (redacted spans highlighted), scanner findings, the policy's reason, and the approval if it had one |
+| `/pending` | Calls waiting for a human, with Approve and Deny, an optional note, and the time left before they time out |
+| `/policy` | The policy, read-only, with toggles for the scanner mode and for which tools need approval |
+
+Pages render on the server for each request; the feed, the queue and the pending count in
+the header then poll the admin API from the browser every 2 s. A held call's latency
+includes the time it waited for a human.
+
 ## Admin API
 
 | Endpoint | Does |
@@ -146,6 +163,7 @@ Gateways re-read the file when it changes. `PUT /policy` rewrites it, dropping c
 | `GET /calls/{id}` | One call, with its approval if it had one |
 | `GET /pending` | Approvals waiting for a decision, oldest first |
 | `POST /pending/{id}/approve`, `POST /pending/{id}/deny` | Body (optional): `{"by": "...", "note": "..."}`. 404 if unknown, 409 if already resolved |
+| `GET /tools` | The tools, with risk and whether they write |
 | `GET /policy`, `PUT /policy` | Read or replace the policy; an invalid policy is rejected with 422 |
 
 Interactive docs are at `http://127.0.0.1:8766/docs`.
@@ -173,5 +191,6 @@ append-only: SQLite rejects any UPDATE or DELETE on it.
 ## Limitations
 
 Everything is local and synthetic: no real SIEM, directory or threat feed. There is no
-authentication on the MCP server or the admin API; both listen on 127.0.0.1 only. The client
+authentication on the MCP server, the admin API or the dashboard: anyone who can reach them
+can approve calls and change the policy. The servers listen on 127.0.0.1 only. The client
 ID is whatever the process was started with, and in HTTP mode all connections share it.
