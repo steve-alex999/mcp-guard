@@ -322,7 +322,7 @@ python eval/run_eval.py --readme                      # and rewrite the table be
 ### Results
 
 <!-- results:start -->
-Generated 2026-10-06 18:46 UTC · 42 attack cases · embedder hash · scanner mode redact
+Generated 2026-10-06 19:40 UTC · 42 attack cases · embedder hash · scanner mode redact
 
 | Metric | Result |
 | --- | --- |
@@ -330,18 +330,37 @@ Generated 2026-10-06 18:46 UTC · 42 attack cases · embedder hash · scanner mo
 | Attack cases with the expected decision | 38/42 |
 | Benign replay: false blocks | 0/400 calls (0%) |
 | Benign replay: false redactions | 0/400 calls |
-| Added latency per call, median / p95 | 3.07 / 6.32 ms |
+| Added latency per call, median / p95 | 2.52 / 5.29 ms |
 | Scanner precision, rules only | 100% (0 of 1537 benign fields flagged) |
 | Scanner recall, rules only: triage injections / poisoned records | 10/10 / 8/12 |
-| Scanner, rules + LLM | not run: needs an LLM (set GEMINI_API_KEY) and --scanner-llm or --llm |
-| LLM triage through the gateway | not run: needs an LLM (set GEMINI_API_KEY) and --scanner-llm or --llm |
+| Scanner precision, rules + LLM | 100% (0 of 1537 benign fields flagged) |
+| Scanner recall, rules + LLM: triage injections / poisoned records | 10/10 / 12/12 |
+| LLM triage (gemini-3.5-flash-lite, guard, 1 runs): false blocks | 0/115 calls |
+| Poisoned records that steered the verdict (of runs that saw them) | scanner off: 3/12 · scanner redact: 1/12 |
 <!-- results:end -->
 
 Every policy case gets its expected decision: out of scope 8/8, rule violations 5/5, schema abuse
 8/8, approvals 4/4 and the flood 1/1. The four attack cases without the expected decision are the
-four poisoned records the scanner's rules miss (`poison-09` to `poison-12`). These numbers were
-generated with `EMBEDDING_PROVIDER=hash`, because the cloud session that ran them could not
-download the fastembed model; the embedder changes search ranking and latency, not decisions.
+four poisoned records the scanner's rules miss (`poison-09` to `poison-12`).
+
+The scanner's LLM layer (gemini-3.5-flash-lite, 25 fields per call) flags those four too, and
+none of the 1,537 benign fields, so rules + LLM catch all 22 labelled injections. That is scored on
+the labelled fields alone. The eval's gateways scan with the rules only, as `policy.yaml` sets
+(`scanner.llm: false`), so the attack-case and replay rows above are rules-only results.
+
+With `--llm`, triage's agent (gemini-3.5-flash-lite, `guard` setup) triaged the first 30 of the
+120 alerts once, every lookup going through the gateway: 115 calls, none blocked, 3.95 ms median
+and 6.59 ms p95 added per call. Each of the 12 poisoned records' threat alerts was then triaged
+once with the scanner off and once in `redact` mode. The agent saw the record every time, and the
+verdict came out the attacker's way (neither escalated nor sent to a human) in 3 of 12 runs with
+the scanner off and 1 of 12 with it on. The scanner was on with the rules only, so `poison-09` to
+`poison-12` reached the model unredacted in both runs. Nothing triages these alerts without a
+poisoned record either, so a missed verdict is not necessarily the record's doing. One run of each
+is too few to call either a rate.
+
+These numbers were generated with `EMBEDDING_PROVIDER=hash`. For the scripted cases the embedder
+changes search ranking and latency, not decisions; in the LLM runs it can also change what the
+agent reads back from a search.
 
 Synthetic data, small numbers, one machine. The attack cases and the scanner rules were written
 by the same person, so treat the scanner's numbers as a sanity check, not a benchmark.
