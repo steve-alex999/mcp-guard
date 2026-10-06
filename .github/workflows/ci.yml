@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    name: Python tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: steve-alex999/alert-triage-agent
+          path: alert-triage-agent
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ./alert-triage-agent -e '.[dev]'
+      - run: pytest -q
+
+  dashboard:
+    name: Dashboard lint, build and smoke test
+    runs-on: ubuntu-latest
+    env:
+      PYTHON: python
+      EMBEDDING_PROVIDER: hash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: steve-alex999/alert-triage-agent
+          path: alert-triage-agent
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ./alert-triage-agent -e .
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci
+        working-directory: dashboard
+      - run: npm run lint
+        working-directory: dashboard
+      - run: npx playwright install --with-deps chromium
+        working-directory: dashboard
+      - run: npm run test:e2e  # builds the dashboard, then drives it
+        working-directory: dashboard
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright
+          path: |
+            dashboard/playwright-report
+            dashboard/test-results
