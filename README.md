@@ -9,9 +9,7 @@ copied. See [SPEC.md](SPEC.md) for the full design.
 
 **Status: milestone 4 of 4, apart from the demo GIF.** The MCP server, the gateway, the
 simulated write tools, the approval queue, the audit log, the admin API, the dashboard, the
-injection scanner and the eval harness work. The policy checks themselves
-(`gateway/policy.py`) are a TODO: until `check()` is written, the gateway fails closed and
-blocks every call with `BLOCK_ERROR`, and the eval reports its gateway results as not run.
+policy checks, the injection scanner and the eval harness work.
 
 ## Setup
 
@@ -22,9 +20,6 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ../alert-triage-agent -e '.[dev]'
 pytest
 ```
-
-`tests/test_policy.py` describes what `policy.check()` must do and fails until it is
-written. To run everything else: `pytest --ignore=tests/test_policy.py`.
 
 ## Run it
 
@@ -130,7 +125,7 @@ call's audit ID and decision. A blocked call comes back with `isError: true` and
 | `clients.<id>.tools` | Tools that client may call |
 | `approval_required` | Tools held for a human decision |
 | `approval_timeout_s` | How long a held call waits |
-| `protected_account_tags` | `disable_account` may not target accounts with these tags |
+| `protected_account_tags` | `disable_account` may not target accounts with these tags, or accounts missing from `identities.jsonl`, whose tags can't be known |
 | `account_tags` | Extra tags per account. Every account is also tagged with its type (human, service or scanner). `identities.jsonl` has no admin flag, so the it-ops team's people are tagged `admin` here |
 | `rate_limit_per_minute` | Calls per client per minute, blocked ones included |
 | `max_window_hours` | Cap on `search_change_records` `window_hours` |
@@ -223,22 +218,31 @@ python eval/run_eval.py --readme                      # and write the table belo
   attacker's way. triage's agent has no write tools, so this measures steering, not write
   attempts.
 
-The gateway parts need `policy.check()`; until it exists they report "not run". Without an
-LLM, the LLM parts report "not run" too.
+Without an LLM, the LLM parts report "not run".
 
 ### Results
 
 <!-- results:start -->
-Generated 2026-10-06 04:12 UTC · 42 attack cases · embedder fastembed:BAAI/bge-small-en-v1.5 · scanner mode redact
+Generated 2026-10-06 18:46 UTC · 42 attack cases · embedder hash · scanner mode redact
 
 | Metric | Result |
 | --- | --- |
-| Gateway: attack cases, benign replay | not run: gateway/policy.py check() is not implemented yet |
+| Malicious calls blocked or neutralised | 32/36 (88.9%) |
+| Attack cases with the expected decision | 38/42 |
+| Benign replay: false blocks | 0/400 calls (0%) |
+| Benign replay: false redactions | 0/400 calls |
+| Added latency per call, median / p95 | 3.07 / 6.32 ms |
 | Scanner precision, rules only | 100% (0 of 1537 benign fields flagged) |
 | Scanner recall, rules only: triage injections / poisoned records | 10/10 / 8/12 |
 | Scanner, rules + LLM | not run: needs an LLM (set GEMINI_API_KEY) and --scanner-llm or --llm |
-| LLM triage through the gateway | not run: gateway/policy.py check() is not implemented yet |
+| LLM triage through the gateway | not run: needs an LLM (set GEMINI_API_KEY) and --scanner-llm or --llm |
 <!-- results:end -->
+
+The four attack cases without the expected decision are the four poisoned records the
+scanner's rules miss (`poison-09` to `poison-12`); every policy case gets its expected
+decision. These numbers were generated with `EMBEDDING_PROVIDER=hash`, because the cloud
+session that ran them could not download the fastembed model. The embedder changes search
+ranking and latency, not the gateway's decisions.
 
 Synthetic data, small numbers, one machine. The attack cases and the scanner rules were
 written by the same person, so treat the scanner's numbers as a sanity check, not a
