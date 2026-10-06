@@ -72,7 +72,7 @@ export interface PolicyConfig {
   rate_limit_per_minute: number;
   max_window_hours: number;
   max_arg_chars: number;
-  scanner: { mode: ScannerMode };
+  scanner: { mode: ScannerMode; llm: boolean };
 }
 
 export class ApiError extends Error {

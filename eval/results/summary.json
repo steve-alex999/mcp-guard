@@ -1,0 +1,35 @@
+{
+  "generated_at": "2026-10-06 04:12 UTC",
+  "embedder": "fastembed:BAAI/bge-small-en-v1.5",
+  "policy": "policy.yaml",
+  "scanner_mode": "redact",
+  "cases": 42,
+  "scanner": {
+    "rules": {
+      "in_sample": {
+        "flagged": 10,
+        "total": 10
+      },
+      "held_out": {
+        "flagged": 8,
+        "total": 12
+      },
+      "negatives": {
+        "flagged": 0,
+        "total": 1537
+      },
+      "precision": 1.0,
+      "recall": 0.8182,
+      "missed": [
+        "poison-09",
+        "poison-10",
+        "poison-11",
+        "poison-12"
+      ],
+      "false_positives": []
+    },
+    "rules_llm": "not run: needs an LLM (set GEMINI_API_KEY) and --scanner-llm or --llm"
+  },
+  "scripted": "not run: gateway/policy.py check() is not implemented yet",
+  "llm": "not run: gateway/policy.py check() is not implemented yet"
+}

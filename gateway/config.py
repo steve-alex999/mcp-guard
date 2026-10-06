@@ -31,7 +31,10 @@ class ClientPolicy(Strict):
 
 
 class ScannerPolicy(Strict):
-    mode: Literal["redact", "envelope", "off"] = "redact"
+    mode: Literal["redact", "envelope", "off"] = Field(
+        default="redact", description="What to do with read-tool output fields that look like injected instructions"
+    )
+    llm: bool = Field(default=False, description="Also ask an LLM classifier, on top of the rules")
 
 
 class PolicyConfig(Strict):

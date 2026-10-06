@@ -19,3 +19,4 @@ max_window_hours: 72
 max_arg_chars: 2000
 scanner:
   mode: redact
+  llm: false

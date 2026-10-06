@@ -72,6 +72,9 @@ export function PolicyEditor({ initial, tools }: { initial: PolicyConfig; tools:
               </label>
             ))}
           </div>
+          <p className="mt-2 text-xs text-zinc-500">
+            LLM classifier: {saved.scanner.llm ? "on" : "off"} (scanner.llm in policy.yaml).
+          </p>
         </fieldset>
 
         <fieldset>
