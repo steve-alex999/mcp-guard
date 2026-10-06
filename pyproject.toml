@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcp-guard"
+version = "0.1.0"
+description = "MCP server and policy gateway for AI agent tool calls, with an approval dashboard."
+readme = "README.md"
+requires-python = ">=3.12"
+# alert-triage-agent is also required. It is not on PyPI, so install it alongside this
+# package: pip install -e ../alert-triage-agent -e '.[dev]'
+dependencies = [
+    "anyio>=4.10",
+    "mcp>=2.3,<3",
+    "pydantic>=2.12",
+    "qdrant-client>=1.12",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools]
+packages = ["gateway"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
