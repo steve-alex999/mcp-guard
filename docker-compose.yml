@@ -1,0 +1,34 @@
+# MCP Guard in two containers:
+#
+#     docker compose up --build
+#
+# Dashboard: http://localhost:3000. MCP (Streamable HTTP): http://localhost:8765/mcp, as client
+# claude-code. Admin API: http://localhost:8766/docs. Fill the dashboard with a scripted session:
+#
+#     docker compose exec gateway python scripts/demo.py
+#
+# Every port is published on 127.0.0.1 only: nothing here has authentication.
+services:
+  gateway:
+    build:
+      context: .
+      args:
+        EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-fastembed}
+    ports:
+      - "127.0.0.1:8765:8765"  # MCP
+      - "127.0.0.1:8766:8766"  # admin API
+      - "127.0.0.1:3000:3000"  # the dashboard, which runs in this service's network
+    volumes:
+      - guard-data:/data  # the audit log, approvals and actions (guard.db)
+
+  dashboard:
+    build: ./dashboard
+    # Shares the gateway's network, so 127.0.0.1:8766 is the admin API for the dashboard's server
+    # as well as for the browser.
+    network_mode: service:gateway
+    depends_on:
+      gateway:
+        condition: service_healthy
+
+volumes:
+  guard-data:
