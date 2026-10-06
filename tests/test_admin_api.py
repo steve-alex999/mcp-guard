@@ -5,6 +5,7 @@ from gateway.admin_api import create_app
 from gateway.approvals import ApprovalQueue
 from gateway.audit import AuditLog, CallRecord, new_id, timestamp
 from gateway.config import load_policy
+from gateway.tools import TOOLS
 
 ARGS = {"account": "aditi.gupta", "reason": "Logged in from a known-bad IP"}
 
@@ -62,6 +63,12 @@ def test_resolving_twice_or_unknown(api, db):
     assert api.post(f"/pending/{approval.id}/approve").status_code == 200
     assert api.post(f"/pending/{approval.id}/deny").status_code == 409
     assert api.post("/pending/missing/approve").status_code == 404
+
+
+def test_lists_tools(api):
+    tools = api.get("/tools").json()
+    assert [t["name"] for t in tools] == list(TOOLS)
+    assert {t["name"]: (t["risk"], t["writes"]) for t in tools}["disable_account"] == ("high", True)
 
 
 def test_get_and_put_policy(api, policy_path):

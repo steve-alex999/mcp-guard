@@ -42,7 +42,8 @@ class ApprovalClosed(Exception):
     """The approval was already resolved."""
 
     def __init__(self, approval: Approval):
-        super().__init__(f"Approval {approval.id} is already {approval.status}")
+        outcome = {"approved": "been approved", "denied": "been denied", "timeout": "timed out"}[approval.status]
+        super().__init__(f"Approval {approval.id} has already {outcome}")
         self.approval = approval
 
 
