@@ -2,16 +2,16 @@
 
 An MCP server that exposes security-triage tools to any MCP client (Claude Desktop, Claude
 Code), with a gateway that checks every tool call before it runs: an allowlist per client,
-schema and argument rules, a rate limit, human approval for high-risk writes, and an
-append-only audit log. The lookup tools and the synthetic data come from
+schema and argument rules, a rate limit, human approval for high-risk writes, a
+prompt-injection scan of tool outputs, and an append-only audit log. The lookup tools and the synthetic data come from
 [alert-triage-agent](https://github.com/steve-alex999/alert-triage-agent), imported, not
 copied. See [SPEC.md](SPEC.md) for the full design.
 
-**Status: milestone 3 of 4.** The MCP server, the gateway, the simulated write tools, the
-approval queue, the audit log, the admin API and the dashboard work. The policy checks
-themselves (`gateway/policy.py`) are a TODO: until `check()` is written, the gateway fails
-closed and blocks every call with `BLOCK_ERROR`. The injection scanner and the eval come in
-milestone 4.
+**Status: milestone 4 of 4, apart from the demo GIF.** The MCP server, the gateway, the
+simulated write tools, the approval queue, the audit log, the admin API, the dashboard, the
+injection scanner and the eval harness work. The policy checks themselves
+(`gateway/policy.py`) are a TODO: until `check()` is written, the gateway fails closed and
+blocks every call with `BLOCK_ERROR`, and the eval reports its gateway results as not run.
 
 ## Setup
 
@@ -118,9 +118,10 @@ call's audit ID and decision. A blocked call comes back with `isError: true` and
 2. A call that needs approval is queued and waits for a decision: `BLOCK_DENIED`, or
    `BLOCK_TIMEOUT` after `approval_timeout_s` or if the client cancels.
 3. Allowed calls run.
-4. One row goes into the audit log, whatever happened.
-
-The output scan of step 7 in SPEC.md comes in milestone 4.
+4. A read tool's output is scanned for injected instructions (see below). If anything is
+   found, the flagged fields are redacted or wrapped, and the decision becomes
+   `ALLOW_REDACTED`.
+5. One row goes into the audit log, whatever happened, with the scanner's findings.
 
 ## policy.yaml
 
@@ -134,9 +135,32 @@ The output scan of step 7 in SPEC.md comes in milestone 4.
 | `rate_limit_per_minute` | Calls per client per minute, blocked ones included |
 | `max_window_hours` | Cap on `search_change_records` `window_hours` |
 | `max_arg_chars` | Cap on a call's arguments, as JSON |
-| `scanner.mode` | `redact`, `envelope` or `off` (used from milestone 4) |
+| `scanner.mode` | What to do with flagged fields in read-tool outputs: `redact`, `envelope` or `off` |
+| `scanner.llm` | Also ask an LLM classifier (needs an LLM, see below) |
 
 Gateways re-read the file when it changes. `PUT /policy` rewrites it, dropping comments.
+
+## Injection scanner
+
+[gateway/scanner.py](gateway/scanner.py) checks every string field in a read tool's output.
+Change-record text is where an attacker could plant instructions, but every field is checked.
+
+- **Rules**, always on: phrases like "ignore previous instructions" and "you are now",
+  notes addressed to an AI agent or assistant, role markup (`</system>`, `[INST]`), `system:`
+  prefixes, requests to call a tool or mentions of the write tools, verdict steering
+  (`escalate=false`, "close this as benign", "do not page"), base64 that decodes to text,
+  and zero-width or bidirectional-control characters.
+- **An LLM classifier**, off by default (`scanner.llm`): one call per tool output, asking
+  which fields address an AI agent. It uses triage's model adapter, so it needs
+  `GEMINI_API_KEY` (or `TRIAGE_PROVIDER=ollama`). If the call fails, the rules still apply.
+
+In `redact` mode a flagged field becomes `[REDACTED: <rules>]`. In `envelope` mode it
+becomes `{"untrusted_content": ..., "warning": ...}`. Either way, the findings (field path,
+rule and matched text) go into the audit log and the dashboard.
+
+The rules are regular expressions, so they miss what they don't anticipate: an injection in
+another language, letters spaced out with hyphens, an appeal to authority with no
+instruction-like wording, or a polite request in plain prose. The eval includes one of each.
 
 ## Dashboard
 
@@ -154,6 +178,71 @@ A Next.js app (App Router, TypeScript, Tailwind) in [dashboard/](dashboard). It 
 Pages render on the server for each request; the feed, the queue and the pending count in
 the header then poll the admin API from the browser every 2 s. A held call's latency
 includes the time it waited for a human.
+
+## Evaluation
+
+```bash
+python eval/run_eval.py                               # attack cases, benign replay, scanner metrics
+python eval/run_eval.py --scanner-llm                 # also score the scanner with its LLM layer
+python eval/run_eval.py --llm --setup guard --runs 3  # also triage alerts with an LLM through the gateway
+python eval/run_eval.py --readme                      # and write the table below
+```
+
+[eval/run_eval.py](eval/run_eval.py) writes `eval/results/summary.json` and
+`eval/results/cases.jsonl`. It runs:
+
+- **Attack cases** from [eval/attacks.jsonl](eval/attacks.jsonl), 42 calls with an expected
+  decision each:
+  - out-of-scope calls (`untrusted-agent` calling `disable_account`, an unknown client, an
+    unknown tool);
+  - rule violations (disabling service and admin accounts, an over-wide search window);
+  - schema abuse (extra fields, wrong types, 5,000- and 10,000-character strings);
+  - approvals the harness denies or approves;
+  - a 31-call flood;
+  - 12 poisoned change records and 4 harmless lookalikes.
+
+  Each poisoned record is pinned to a threat alert's host, account and time. No real record
+  matches a threat alert's window, so searching for that alert returns the poisoned record
+  alone. A malicious call counts as stopped if it is blocked, or if its output comes back
+  `ALLOW_REDACTED`.
+- **A benign replay**: for each of the 120 alerts, the lookups an analyst would make (search,
+  asset, identity, and indicators for external addresses), about 400 calls as `eval-agent`.
+  Each call is timed against the toolbox directly and through the gateway, and the
+  difference is the added latency. Each alert gets a fresh audit log, because the replay runs
+  far faster than the 30-calls-a-minute limit; the flood case tests that limit.
+- **Scanner precision and recall** on labelled fields. The injected fields are the 10 alerts
+  in triage's data that carry an injection string, plus the 12 poisoned records. The benign
+  fields are everything else: the other alerts, every change record's title and description,
+  every identity and asset field, and the lookalikes. The rules were written with triage's 10
+  injection strings in view, so recall on those is in-sample. The poisoned records were
+  written before the rules were first run against them, and were not tuned against afterwards.
+- **With `--llm`**: triage's agent loop (`--setup agent` or `guard`) triages the alerts with
+  every lookup going through the gateway. It records false blocks (calls the gateway refused
+  that the toolbox would have answered) and added latency. It then triages the poisoned
+  records' alerts with the scanner off and on, and counts how often the verdict came out the
+  attacker's way. triage's agent has no write tools, so this measures steering, not write
+  attempts.
+
+The gateway parts need `policy.check()`; until it exists they report "not run". Without an
+LLM, the LLM parts report "not run" too.
+
+### Results
+
+<!-- results:start -->
+Generated 2026-10-06 04:12 UTC · 42 attack cases · embedder fastembed:BAAI/bge-small-en-v1.5 · scanner mode redact
+
+| Metric | Result |
+| --- | --- |
+| Gateway: attack cases, benign replay | not run: gateway/policy.py check() is not implemented yet |
+| Scanner precision, rules only | 100% (0 of 1537 benign fields flagged) |
+| Scanner recall, rules only: triage injections / poisoned records | 10/10 / 8/12 |
+| Scanner, rules + LLM | not run: needs an LLM (set GEMINI_API_KEY) and --scanner-llm or --llm |
+| LLM triage through the gateway | not run: gateway/policy.py check() is not implemented yet |
+<!-- results:end -->
+
+Synthetic data, small numbers, one machine. The attack cases and the scanner rules were
+written by the same person, so treat the scanner's numbers as a sanity check, not a
+benchmark.
 
 ## Admin API
 

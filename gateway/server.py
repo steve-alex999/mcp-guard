@@ -37,9 +37,11 @@ from gateway.audit import AuditLog, CallRecord, Decision, db_path, new_id, times
 from gateway.config import PolicyConfig, PolicyFile, policy_path
 from gateway.policy import POLICY_DECISIONS, CallContext, PolicyResult, ToolCall
 from gateway.policy import check as policy_check
+from gateway.scanner import LLMClassifier, apply, scan
 from gateway.tools import TOOLS
 from triage.data import DATA_DIR, load_alerts, load_assets, load_change_records, load_identities, load_threat_intel
 from triage.embeddings import get_embedder
+from triage.llm import get_llm
 from triage.tools import Toolbox, ensure_index
 
 log = logging.getLogger("gateway")
@@ -58,6 +60,7 @@ class Gateway:
     audit: AuditLog
     approvals: ApprovalQueue
     check: Check = policy_check
+    classifier: LLMClassifier | None = None  # the scanner's LLM layer, used when the policy turns it on
 
     async def guarded_call(self, client_id: str, tool: str, args: dict[str, Any],
                            on_wait: OnWait | None = None) -> CallRecord:
@@ -71,11 +74,11 @@ class Gateway:
         result = self._check(ToolCall(client_id, tool, args), config)
         decision, reason = result.decision, result.reason
 
-        def record(decision: Decision, reason: str, output: Any = None) -> CallRecord:
+        def record(decision: Decision, reason: str, output: Any = None, findings: list | None = None) -> CallRecord:
             call = CallRecord(
                 id=call_id, ts=timestamp(), client_id=client_id, tool=tool, args=args, decision=decision,
-                reason=reason, output=output, latency_ms=round((time.monotonic() - started) * 1000, 1),
-                approval_id=approval_id,
+                reason=reason, output=output, findings=findings or [],
+                latency_ms=round((time.monotonic() - started) * 1000, 1), approval_id=approval_id,
             )
             self.audit.record(call)
             log.info("%s %s -> %s in %.0f ms", client_id, tool, decision, call.latency_ms)
@@ -99,7 +102,20 @@ class Gateway:
 
         if decision != "ALLOW":
             return record(decision, reason)
-        return record(decision, reason, await anyio.to_thread.run_sync(self._execute, tool, result.args))
+        output = await anyio.to_thread.run_sync(self._execute, tool, result.args)
+
+        # Step 7: read-tool outputs carry data from outside, so scan them for injected instructions.
+        mode = config.scanner.mode
+        if TOOLS[tool].writes or mode == "off":
+            return record(decision, reason, output)
+        classifier = self.classifier if config.scanner.llm else None
+        findings = await anyio.to_thread.run_sync(scan, output, classifier)
+        if not findings:
+            return record(decision, reason, output)
+        fields = sorted({f.path for f in findings})
+        action = "redacted" if mode == "redact" else "wrapped in an untrusted_content envelope"
+        reason = f"{reason}. The output scanner {action} {len(fields)} field(s): {', '.join(fields)}"
+        return record("ALLOW_REDACTED", reason, apply(output, findings, mode), [f.to_dict() for f in findings])
 
     def _check(self, call: ToolCall, config: PolicyConfig) -> PolicyResult:
         """policy.check(), failing closed if it raises or returns something it should not."""
@@ -193,7 +209,16 @@ def load_gateway(policy: Path, db: Path) -> Gateway:
     data_dir = Path(os.environ.get("TRIAGE_DATA_DIR", DATA_DIR))
     toolbox = load_toolbox(data_dir)
     actions = Actions(db, {a.alert.id for a in load_alerts(data_dir)}, toolbox.identities, toolbox.assets)
-    return Gateway(toolbox, actions, PolicyFile(policy), AuditLog(db), ApprovalQueue(db))
+    return Gateway(toolbox, actions, PolicyFile(policy), AuditLog(db), ApprovalQueue(db), classifier=load_classifier())
+
+
+def load_classifier() -> LLMClassifier | None:
+    """The scanner's LLM layer, if an LLM is configured (see triage/llm.py: GEMINI_API_KEY, TRIAGE_PROVIDER)."""
+    try:
+        return LLMClassifier(get_llm())
+    except (RuntimeError, ValueError) as e:
+        log.info("No LLM for the scanner, so scanner.llm has no effect: %s", e)
+        return None
 
 
 async def serve(server: GuardServer, args: argparse.Namespace) -> None:

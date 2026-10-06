@@ -28,3 +28,4 @@ packages = ["gateway"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["eval"]
