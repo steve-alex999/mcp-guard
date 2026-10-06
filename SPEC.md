@@ -188,9 +188,11 @@ Claude Desktop config (add to claude_desktop_config.json):
 { "mcpServers": { "mcp-guard": { "command": "python", "args": ["-m", "gateway.server", "--transport", "stdio", "--client-id", "claude-desktop"], "cwd": "/Users/stephen/Reaper/mcp-guard" } } }
 ```
 
-## 12. Resume line (fill in real numbers after the eval)
+## 12. Resume line
 
-"Built MCP Guard, an MCP server and policy gateway that mediates AI agent tool calls (allowlists, schema validation, human approval for write actions, prompt-injection scanning of tool outputs, append-only audit log) with a Next.js approval dashboard; blocked X of Y injected and out-of-scope tool calls with Z% false blocks on 120 benign triage runs."
+"Built MCP Guard, an MCP server and policy gateway that mediates AI agent tool calls (allowlists, schema validation, human approval for write actions, prompt-injection scanning of tool outputs, append-only audit log) with a Next.js approval dashboard; stopped 32 of 36 malicious tool calls in a 42-case attack suite (every out-of-scope, rule-breaking, schema-abusing and flooding call, and 8 of 12 poisoned tool outputs) with 0 false blocks on 400 benign lookups across 120 synthetic alerts, adding about 3 ms per call."
+
+Numbers from `python eval/run_eval.py` on 2026-10-06 (README, Results). The LLM triage runs through the gateway have not been run yet; they need an API key.
 
 ## 13. Instructions for Claude Code
 
