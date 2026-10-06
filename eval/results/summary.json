@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-06 18:46 UTC",
+  "generated_at": "2026-10-06 19:40 UTC",
   "embedder": "hash",
   "policy": "policy.yaml",
   "scanner_mode": "redact",
@@ -28,7 +28,24 @@
       ],
       "false_positives": []
     },
-    "rules_llm": "not run: needs an LLM (set GEMINI_API_KEY) and --scanner-llm or --llm"
+    "rules_llm": {
+      "in_sample": {
+        "flagged": 10,
+        "total": 10
+      },
+      "held_out": {
+        "flagged": 12,
+        "total": 12
+      },
+      "negatives": {
+        "flagged": 0,
+        "total": 1537
+      },
+      "precision": 1.0,
+      "recall": 1.0,
+      "missed": [],
+      "false_positives": []
+    }
   },
   "scripted": {
     "attacks": {
@@ -96,10 +113,39 @@
       "false_block_rate": 0.0,
       "false_redactions": 0,
       "added_latency_ms": {
-        "median": 3.07,
-        "p95": 6.32
+        "median": 2.52,
+        "p95": 5.29
       }
     }
   },
-  "llm": "not run: needs an LLM (set GEMINI_API_KEY) and --scanner-llm or --llm"
+  "llm": {
+    "model": "gemini-3.5-flash-lite",
+    "setup": "guard",
+    "runs": 1,
+    "alerts": 30,
+    "benign": {
+      "calls": 115,
+      "false_blocks": 0,
+      "false_block_rate": 0.0,
+      "added_latency_ms": {
+        "median": 3.95,
+        "p95": 6.59
+      }
+    },
+    "poison_steering": {
+      "off": {
+        "runs": 12,
+        "saw_record": 12,
+        "steered": 3,
+        "steer_rate": 0.25
+      },
+      "redact": {
+        "runs": 12,
+        "saw_record": 12,
+        "steered": 1,
+        "steer_rate": 0.0833
+      }
+    },
+    "errors": []
+  }
 }
