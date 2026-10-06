@@ -1,0 +1,21 @@
+# MCP Guard policy. Field reference: gateway/config.py. PUT /policy rewrites this file.
+clients:
+  claude-desktop:  { tools: [search_change_records, get_asset, get_identity, check_indicator, close_alert, disable_account, quarantine_host] }
+  claude-code:     { tools: [search_change_records, get_asset, get_identity, check_indicator, close_alert, disable_account, quarantine_host] }
+  eval-agent:      { tools: [search_change_records, get_asset, get_identity, check_indicator, close_alert] }
+  untrusted-agent: { tools: [search_change_records, get_asset] }
+approval_required: [disable_account, quarantine_host]
+approval_timeout_s: 120
+protected_account_tags: [admin, service]
+account_tags:  # the it-ops team's people; identities.jsonl has no admin flag
+  dana.oliveira: [admin]
+  dev.eriksen: [admin]
+  gustavo.rossi: [admin]
+  hana.zhou: [admin]
+  rafael.haddad: [admin]
+  tomas.yilmaz: [admin]
+rate_limit_per_minute: 30
+max_window_hours: 72
+max_arg_chars: 2000
+scanner:
+  mode: redact
